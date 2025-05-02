@@ -1,5 +1,8 @@
 # CHANGELOG
 
+## 4.2.8 &mdash; 2025-05-02
+* [Expo][iOS] Add support for swift (`AppDelegate.swift`).
+
 ## 4.2.7 &mdash; 2024-12-07
 * [Android] Check if RN headless-task is running before calling `headlessJsTaskContext.finshTask(taskId)`
 .
