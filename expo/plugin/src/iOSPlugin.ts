@@ -1,57 +1,87 @@
 import {
   ConfigPlugin,
-  withAppDelegate
+  IOSConfig,
+  WarningAggregator,
+  withAppDelegate,
 } from "@expo/config-plugins";
-import { mergeContents } from "@expo/config-plugins/build/utils/generateCode";
 
+import { AppDelegateProjectFile } from '@expo/config-plugins/build/ios/Paths';
+
+import { mergeContents } from "@expo/config-plugins/build/utils/generateCode";
 
 type Props = {}
 
 export const iOSPlugin: ConfigPlugin<Props> = (config, props={}) => {
-  config = applyAppDelegate(config, props);
-  return config;
+
+  return withAppDelegate(config, (config) => {
+
+    const fileInfo = IOSConfig.Paths.getAppDelegate(config.modRequest.projectRoot);
+
+    console.log(`[react-native-background-fetch] configuring AppDelegate (${fileInfo.language})`);
+
+    switch (fileInfo.language) {
+      case 'objc':
+      case 'objcpp':
+        config.modResults.contents = modifyObjcAppDelegate(config.modResults.contents);
+        break;
+      case 'swift':
+        config.modResults.contents = modifySwiftAppDelegate(config.modResults.contents);
+        break;
+      default:
+        throw new Error(`[react-native-background-fetch] Cannot configure AppDelegate for language "${fileInfo.language}"`);
+    }
+
+    return config;
+  });
+
 };
 
-const applyAppDelegate:ConfigPlugin<Props> = (config, props) => {
-	return withAppDelegate(config, (config) => {
-		config.modResults.contents = applyDidFinishLaunchingWithOptions(config.modResults.contents);
-		config.modResults.contents = applyAppDelegateImport(config.modResults.contents);
-		return config;
-	});
-}
-
-const applyDidFinishLaunchingWithOptions = (src: string) => {
-  let newSrc = [];
-  newSrc.push(
-    "  [[TSBackgroundFetch sharedInstance] didFinishLaunching];"
-  );
-
-  newSrc = newSrc.filter(Boolean);
-
-  return mergeContents({
-    tag: "react-native-background-fetch-didFinishLaunchingWithOptions",
+const modifyObjcAppDelegate = (src:string) => {
+  // 1.  import TSBackgroundFetch
+  src = mergeContents({
+    tag: "react-native-background-fetch-import",
     src,
-    newSrc: newSrc.join("\n"),
+    newSrc: "#import <TSBackgroundFetch/TSBackgroundFetch.h>",
+    anchor: "@implementation AppDelegate",
+    offset: -1,
+    comment: "//",
+  }).contents;
+
+  // 2.  TSBackgroundFetch.sharedInstance().didFinishLaunching();
+  src = mergeContents({
+    tag: "react-native-background-fetch-didFinishLaunching",
+    src,
+    newSrc: "  [[TSBackgroundFetch sharedInstance] didFinishLaunching];",
     anchor: "didFinishLaunchingWithOptions:launchOptions];",
     offset: -1,
     comment: "//",
   }).contents;
+
+  return src;
 }
 
-const applyAppDelegateImport = (src: string) => {
-  const newSrc = [];
-  newSrc.push(
-    "#import <TSBackgroundFetch/TSBackgroundFetch.h>",
-  );
-
-  return mergeContents({
+const modifySwiftAppDelegate = (src:string) => {
+  // 1.  import TSBackgroundFetch
+  src = mergeContents({
     tag: "react-native-background-fetch-import",
     src,
-    newSrc: newSrc.join("\n"),
-    anchor: /#import "AppDelegate\.h"/,
-    offset: 1,
+    newSrc: "import TSBackgroundFetch",
+    anchor: /@UIApplicationMain/,
+    offset: -1,
     comment: "//",
   }).contents;
+
+  // 2.  TSBackgroundFetch.sharedInstance().didFinishLaunching();
+  src = mergeContents({
+    tag: "react-native-background-fetch-didFinishLaunching",
+    src,
+    newSrc: "    TSBackgroundFetch.sharedInstance().didFinishLaunching();",
+    anchor: /return super.*didFinishLaunchingWithOptions.*/,
+    offset: -1,
+    comment: "//",
+  }).contents;
+
+  return src;
 }
 
 export default iOSPlugin;
